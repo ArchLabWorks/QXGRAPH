@@ -1,6 +1,8 @@
 # QXGRAPH v1.1
 ### QUANTXT Graphing Utility — IBM PC/XT CGA Time-Series Visualizer
 
+![screenshot](DOCS/Screenshot.PNG)
+
 A stand-alone DOS graphing tool for the IBM PC/XT that renders financial and macroeconomic time-series data in CGA Mode 6 (640×200 monochrome). Built as a companion utility to the **QuanTXT** research platform. Also supports general-purpose columnar time-series data including stock market and technical indicator datasets.
 
 ---
