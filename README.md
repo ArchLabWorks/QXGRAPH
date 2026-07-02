@@ -1,5 +1,5 @@
 # **QXGRAPH v1.2**  
-### **QuanTXT Graphing Utility — IBM PC/XT CGA Time‑Series Visualizer**
+### **QuantXT Graphing Utility — IBM PC/XT CGA Time‑Series Visualizer**
 
 ![screenshot](DOCS/Screenshot.PNG)
 
