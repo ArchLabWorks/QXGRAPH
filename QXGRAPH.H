@@ -13,27 +13,29 @@ typedef enum {
 
 /* ============================================================
    GRAPH PARAMETER CONTROL
+   COMPACT: Use fixed-size arrays instead of pointers
    ============================================================ */
 typedef struct {
     int          param_index;
     int          total_params;
     int          window_start;
     int          window_size;
-    const char **labels;
-    const char  *ticker;
-    ScaleMode    scale_mode;
+    char         labels[20][32];  /* inline labels, max 19 params */
+    char         ticker[16];      /* inline ticker */
+    unsigned char scale_mode;     /* byte instead of enum */
     double       fixed_min;
     double       fixed_max;
-    int          carousel_on;       /* new */
-    int          carousel_delay;    /* new - seconds between switches */
+    unsigned char carousel_on;
+    unsigned char carousel_delay;  /* 1-60 seconds */
 } GraphParams;
 
 /* ============================================================
    GRAPH DATA
+   COMPACT: Use fixed-size array inline
    ============================================================ */
 typedef struct {
     int    count;
-    double values[256];
+    double values[256];  /* inline data, max 256 points */
 } GraphData;
 
 /* ============================================================

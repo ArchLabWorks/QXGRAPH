@@ -10,7 +10,7 @@ static void qxgraph_banner(void)
 {
     static const char *lines[] = {
         "============================================================",
-        "                        QXGRAPH  v1.1                       ",
+        "                        QXGRAPH  v1.2                       ",
         "                   QUANTXT Graphing Utility                 ",
         "------------------------------------------------------------",
         "   Stand-alone CGA Mode 6 Time-Series Graphing Tool         ",
@@ -60,31 +60,45 @@ static void qxgraph_banner(void)
 int main(void)
 {
     char fname[13];
+    int  ch;
 
     qxgraph_banner();
 
-    _clearscreen(_GCLEARSCREEN);
-    _settextposition(1, 1);
+    for (;;) {
+        _clearscreen(_GCLEARSCREEN);
+        _settextposition(1, 1);
 
-    printf("Select a scenario file (.TXT):\n\n");
+        printf("Select a scenario file (.TXT):\n\n");
 
-    if (!pick_txt_file(fname)) {
-        printf("\nNo file selected. Press any key to exit.\n");
+        if (!pick_txt_file(fname)) {
+            printf("\nNo file selected. Press any key to exit.\n");
+            getch();
+            break;
+        }
+
+        printf("\nSelected file: %s\n", fname);
+        printf("Press any key to load graph...\n");
         getch();
-        return 0;
+
+        /* flush any extra keystrokes before entering graph loop */
+        while (kbhit()) getch();
+
+        run_graph(fname);
+
+        /* run_graph() already returned to text mode; offer a way back
+           to the file picker instead of exiting unconditionally */
+        _clearscreen(_GCLEARSCREEN);
+        _settextposition(1, 1);
+        printf("Graph closed.\n\n");
+        printf("ENTER : Select another scenario\n");
+        printf("ESC   : Exit\n");
+
+        for (;;) {
+            ch = getch();
+            if (ch == 13) break;   /* back to top of outer loop */
+            if (ch == 27) return 0;
+        }
     }
-
-    printf("\nSelected file: %s\n", fname);
-    printf("Press any key to load graph...\n");
-    getch();
-
-    /* flush any extra keystrokes before entering graph loop */
-    while (kbhit()) getch();
-
-    run_graph(fname);
-
-    printf("\nGraph visualization complete. Press any key to exit.\n");
-    getch();
 
     return 0;
 }

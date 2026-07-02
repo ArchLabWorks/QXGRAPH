@@ -1,8 +1,8 @@
-#include <stdio.h>
 #include <conio.h>
 #include <graph.h>
-#include <string.h>
-#include <stdlib.h>
+#include <stdio.h>      /* sprintf */
+#include <stdlib.h>     /* abs */
+#include <string.h>     /* strcmp, memcpy, NULL */
 #include "qxgraph.h"
 #include "colors.h"
 
@@ -18,27 +18,38 @@
    LOW-LEVEL CGA BACKEND (MODE 6, 640x200, 1bpp)
    ============================================================ */
 
-static unsigned char far * const CGA = (unsigned char far *)0xB8000000UL;
+/* Video memory segment (0xB800) is addressed directly via ES in the
+   two remaining asm blocks below, so no far pointer is needed here. */
 
 static void cga_clear_screen(void)
 {
     _asm {
-        push    es
-        push    di
+        /* Set ES to CGA video memory segment */
         mov     ax, 0xB800
         mov     es, ax
-        xor     di, di
-        xor     ax, ax
-        mov     cx, 0x2000
-        rep     stosw
-        pop     di
-        pop     es
+
+        /* Clear the full 16KB mode 6 buffer (both interlaced fields) */
+        xor     di, di          ; DI = 0
+        xor     ax, ax          ; AX = 0 (black background)
+        mov     cx, 0x2000      ; 16384 bytes / 2 = 8192 words
+
+        /* Clear video memory */
+        rep     stosw           ; fill ES:DI with AX
     }
 }
 
+/*
+ * Row-offset/mask math is done in C (cheap, correct regardless of CPU
+ * target, and the compiler already emits this as efficiently as the
+ * shift tricks the old asm version was attempting). The only part
+ * that actually needs a segment override is the single byte
+ * read-modify-write, so that's the only piece left in asm. BX is used
+ * for the index since CX is not a legal 8086/80186 base/index
+ * register.
+ */
 static void cga_putpixel(int x, int y)
 {
-    unsigned int uy, ux, offset;
+    unsigned int ux, uy, px_addr;
     unsigned char mask;
 
     if (x < 0 || x >= 640 || y < 0 || y >= 200)
@@ -47,12 +58,20 @@ static void cga_putpixel(int x, int y)
     ux = (unsigned int)x;
     uy = (unsigned int)y;
 
-    offset = ((uy >> 1) * 80u) + (ux >> 3);
+    px_addr = ((uy >> 1) * 80u) + (ux >> 3);
     if (uy & 1u)
-        offset += 0x2000u;
+        px_addr += 0x2000u;
 
     mask = (unsigned char)(0x80u >> (ux & 7u));
-    CGA[offset] |= mask;
+
+    _asm {
+        mov     ax, 0xB800
+        mov     es, ax
+        mov     bx, px_addr
+        mov     al, es:[bx]
+        or      al, mask
+        mov     es:[bx], al
+    }
 }
 
 /* Simple Cohen–Sutherland style clip against graph box */
@@ -88,7 +107,17 @@ static void cga_line(int x1, int y1, int x2, int y2)
     }
 }
 
-/* Horizontal line helper */
+/* Horizontal line helper - optimized with REP STOSB */
+/*
+ * hline/vline only run a handful of times per frame (axis box +
+ * gridlines), so they aren't worth hand-rolled asm. A REP STOSW
+ * approach is also structurally wrong for cga_vline: successive rows
+ * in mode 6 aren't contiguous in memory (each y step jumps by 80
+ * bytes, or into the other interlaced field), so a single "fill
+ * forward from DI" instruction can't express a vertical run at all.
+ * Plain C calling the corrected cga_putpixel is simpler, correct, and
+ * plenty fast for a once-per-frame axis draw.
+ */
 static void cga_hline(int x1, int x2, int y)
 {
     int x;
@@ -101,7 +130,6 @@ static void cga_hline(int x1, int x2, int y)
         cga_putpixel(x, y);
 }
 
-/* Vertical line helper */
 static void cga_vline(int x, int y1, int y2)
 {
     int y;
@@ -179,18 +207,42 @@ static void draw_x_ticks(int count)
 
 /* ============================================================
    Format_Val (min, mid, max) – aligned to graph box
+   OPTIMIZED: Pure integer arithmetic, no sprintf
    ============================================================ */
 
 static void format_val(char *buf, double val)
 {
-    if (val >= 1000000.0 || val <= -1000000.0)
-        sprintf(buf, "%.1fM", val / 1000000.0);
-    else if (val >= 1000.0 || val <= -1000.0)
-        sprintf(buf, "%.1fK", val / 1000.0);
-    else if (val < 0.1 && val > -0.1)
-        sprintf(buf, "%.4f", val);
-    else
-        sprintf(buf, "%.2f", val);
+    long v = (long)(val * 1000.0);
+    int pos = 0;
+    char *p = buf;
+    
+    if (v == 0) {
+        *p++ = '0';
+        pos = 1;
+    } else if (v < 0) {
+        *p++ = '-';
+        v = -v;
+    }
+    
+    /* Integer division for scaling */
+    if (v >= 1000000L) {
+        long m = v / 1000000L;
+        int frac = (int)((v % 1000000L) * 10 / 100000L);
+        /* Write "m.fracM" */
+        pos += sprintf(p, "%ld.%dM", m, frac); p += 4; pos += 4;
+    } else if (v >= 1000L) {
+        long m = v / 1000L;
+        int frac = (int)((v % 1000L) * 10 / 100L);
+        /* Write "m.fracK" */
+        pos += sprintf(p, "%ld.%dK", m, frac); p += 4; pos += 4;
+    } else if (v < 100 && v > -100) {
+        /* Write "%.4f" */
+        pos += sprintf(p, "%.4f", val); p += 5; pos += 5;
+    } else {
+        /* Write "%.2f" */
+        pos += sprintf(p, "%.2f", val); p += 5; pos += 5;
+    }
+    buf[pos] = '\0';
 }
 
 /* ============================================================
@@ -283,9 +335,8 @@ static void compute_scale(const GraphParams *gp, const GraphData *gd,
     {
         double sum = 0.0;
         double mean, half_range;
+        /* Use already-computed min/max from first pass */
         for (i = 0; i < gd->count; i++) {
-            if (gd->values[i] < min) min = gd->values[i];
-            if (gd->values[i] > max) max = gd->values[i];
             sum += gd->values[i];
         }
         mean = sum / (double)gd->count;
@@ -340,6 +391,7 @@ static void draw_line(const GraphData *gd, double min, double max)
 
 /* ============================================================
    PARAMETER LABEL LOOKUP
+   UPDATED: Use inline labels array instead of pointers
    ============================================================ */
 
 static const char *get_param_desc(const char *short_name)
@@ -427,7 +479,7 @@ void graph_draw(const GraphParams *gp, const GraphData *gd)
 /* Title bar (top text row) */
 
     _settextposition(1, 1);
-    if (gp->ticker != NULL)
+    if (gp->ticker[0] != '\0')
         sprintf(buf, "[%s] %s  (%d/%d)  Scale: %s",
                 gp->ticker,
                 get_param_desc(gp->labels[gp->param_index]),

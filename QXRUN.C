@@ -1,8 +1,8 @@
 #include <graph.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <conio.h>
+#include <stdio.h>      /* FILE, fopen, fgets, fclose, sprintf, printf */
+#include <stdlib.h>     /* atof */
+#include <string.h>     /* strncpy, strtok, strcmp, memcpy, memset, size_t */
 #include "qxgraph.h"
 #include "qxrun.h"
 
@@ -16,7 +16,6 @@ static int cols = 0;
 static int top  = 0;
 
 static char label_buf[MAX_COLS][32];
-static const char *label_ptrs[MAX_COLS];
 static int labels_loaded = 0;
 static char ticker_buf[16] = "";
 
@@ -46,10 +45,6 @@ static int load_txt(const char *fname)
     cols = 0;
     labels_loaded = 0;
 
-    /* clear label pointers */
-    for (c = 0; c < MAX_COLS; c++)
-        label_ptrs[c] = NULL;
-
     while (fgets(line, sizeof(line), fp)) {
 
         /* parse header line for column labels */
@@ -65,7 +60,7 @@ static int load_txt(const char *fname)
             strncpy(ticker_buf, tok, 15);
             ticker_buf[15] = '\0';
         }
-        continue;   /* do NOT set labels_loaded here */
+        continue;
     }
 
     if (tok && strcmp(tok, "name") == 0) {
@@ -74,12 +69,10 @@ static int load_txt(const char *fname)
         while (tok && c < MAX_COLS - 1) {
             strncpy(label_buf[c], tok, 31);
             label_buf[c][31] = '\0';
-            label_ptrs[c] = label_buf[c];
             tok = strtok(NULL, " \t\r\n");
             c++;
         }
-        label_ptrs[c] = NULL;
-        labels_loaded = 1;   /* only set here, after name line */
+        labels_loaded = 1;
     }
     continue;
 }
@@ -105,9 +98,7 @@ static int load_txt(const char *fname)
     if (!labels_loaded) {
         for (c = 0; c < cols; c++) {
             sprintf(label_buf[c], "col_%d", c + 1);
-            label_ptrs[c] = label_buf[c];
         }
-        label_ptrs[cols] = NULL;
     }
 
     fclose(fp);
@@ -133,11 +124,11 @@ void run_graph(const char *fname)
 
     gp.param_index  = 0;
     gp.total_params = cols;
-    gp.labels       = label_ptrs;
+    memcpy(gp.labels, label_buf, (size_t)cols * sizeof(label_buf[0]));
+    strncpy(gp.ticker, ticker_buf, 15);
     gp.scale_mode   = SCALE_TIGHT;
     gp.fixed_min    = 0.0;
     gp.fixed_max    = 1.0;
-    gp.ticker = (ticker_buf[0] != '\0') ? ticker_buf : NULL;
     gp.carousel_on    = 0;
     gp.carousel_delay = carousel_delay;
 
