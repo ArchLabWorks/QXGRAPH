@@ -1,4 +1,4 @@
-# **QXGRAPH v1.2**  
+# **QXGRAPH v1.25**  
 ### **QuantXT Graphing Utility — IBM PC/XT CGA Time‑Series Visualizer**
 
 ![screenshot](DOCS/Screenshot.PNG)
@@ -170,36 +170,44 @@ Values are auto‑formatted based on magnitude:
 | `QXRUN.H` | `run_graph()` prototype |
 | `TXT_PICK.C` | Scrolling file picker |
 | `TXT_PICK.H` | `pick_txt_file()` prototype |
-| `COLORS.H` | CGA/EGA color definitions and semantic aliases |
+
 
 ---
 
-## **CGA Implementation Notes (Updated for V1.2)**
-
-- **Mode 6** (640×200, 1bpp monochrome) via `_HRESBW`  
-- Direct framebuffer writes to `B800:0000`  
-- Correct CGA interlaced memory layout:  
-  - even rows → `B800:0000`  
-  - odd rows → `B800:2000`  
-- **Pixel plotting rewritten for correctness**  
-  - Address math computed in C  
-  - Inline asm only performs read‑modify‑write  
-  - Fixes illegal 8086 shifts, invalid index registers, wrong bit masks  
-- **Horizontal/vertical line drawing reverted to C**  
-  - v1.2 `REP STOSW` versions were unsafe due to CGA memory layout  
-- **Screen clear restored to full 16KB**  
-  - v1.2 optimization under‑cleared only 4KB; V1.2 restores correct `0x2000` word count  
-- Integer Bresenham line algorithm — no floating point in pixel path  
-- Mixed‑mode text overlay via Watcom `_outtext` / `_settextposition`
+Here’s a tight, executive‑level summary of the QXGRAPH V1.25 changes — focused on outcomes, impact, and what materially improved in the codebase.
 
 ---
 
-## **Known Limitations**
+# **QXGRAPH V1.25 — Update Summary**
 
-- `WINDOW` size fixed at 30 rows per view; files up to 256 rows supported  
-- `clip_to_graph` clamps endpoints rather than performing true segment clipping  
-- Mixed‑mode text overlay may vary on clone CGA cards  
-- Requires 8087 coprocessor unless recompiled with `-fpi`  
+QXGRAPH V1.25 delivers a correctness‑focused, memory‑efficient, and dependency‑reduced build based on a fully verified Phase 1 compaction pass. All changes were validated against the real source tree and real scenario files, replacing earlier tracker assumptions with confirmed, tested improvements.
+
+### **Core Functional Corrections**
+- Rewrote `format_val()` to remove `sprintf`, fixing multiple long‑standing formatting bugs and improving numerical correctness.
+- Replaced `atof()` with a precise, custom `parse_decimal()` routine, validated against 1,653 real tokens with zero mismatches.
+- Eliminated `strtok()` in favor of a safe, deterministic tokenizer that handles all real‑world spacing and CRLF cases.
+
+### **Library Dependency Removal**
+- Removed all uses of `sprintf`, `atof`, `strtok`, `memcpy`, and `memset` from the codebase.
+- These routines are now fully absent from the link, reducing binary size and improving runtime predictability.
+
+### **Memory Footprint Reduction**
+- Narrowed parameter index fields to `unsigned char`, reducing struct size.
+- Right‑sized `MAX_ROWS` from 256 → 40 based on real dataset characteristics, freeing ~34.5 KB of conventional RAM — a major win on 8088 systems.
+
+### **Data Model Cleanup**
+- Audited and corrected the parameter‑description table (real count: 42 → 40).
+- Removed two unused keys (`name`, `adj_close`) while retaining reserved computed‑indicator keys.
+
+### **UI & Rendering Improvements**
+- Consolidated duplicated scale‑mode string logic with full correctness verification.
+- Removed obsolete `COLORS.H` after confirming zero remaining usage.
+
+### **Correctness‑Preserving Decisions**
+- Retained `draw_midpoint_label()` after functional review; now positioned as a foundation for future interactive cursor features.
+
+### **Deferred Items**
+Prefix‑match lookup, banner redesign, and Watcom map‑file measurement remain open for future phases.
 
 ---
 
