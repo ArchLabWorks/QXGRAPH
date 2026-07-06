@@ -118,7 +118,7 @@ Rules:
 - Up to **256 rows**, **19 parameters**  
 - Files without headers fall back to `col_1`, `col_2`, etc.
 
-### **QuanTXT Scenario Format**
+### **QuantXT Scenario Format**
 
 ```
 #US_MARKET_FISCAL_30D REPORT 5/17/2026
@@ -171,10 +171,6 @@ Values are auto‑formatted based on magnitude:
 | `TXT_PICK.C` | Scrolling file picker |
 | `TXT_PICK.H` | `pick_txt_file()` prototype |
 
-
----
-
-Here’s a tight, executive‑level summary of the QXGRAPH V1.25 changes — focused on outcomes, impact, and what materially improved in the codebase.
 
 ---
 
