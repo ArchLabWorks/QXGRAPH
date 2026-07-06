@@ -1,7 +1,7 @@
-#include <stdio.h>
+#include <stdio.h>      /* printf */
 #include <dos.h>
 #include <conio.h>
-#include <string.h>
+#include <string.h>     /* strncpy, strcpy */
 #include <graph.h>
 #include "txt_pick.h"
 

@@ -2,9 +2,8 @@
 #include <graph.h>
 #include <stdio.h>      /* sprintf */
 #include <stdlib.h>     /* abs */
-#include <string.h>     /* strcmp, memcpy, NULL */
+#include <string.h>     /* strcmp, NULL */
 #include "qxgraph.h"
-#include "colors.h"
 
 #define GX_LEFT   20
 #define GX_RIGHT  620
@@ -207,41 +206,112 @@ static void draw_x_ticks(int count)
 
 /* ============================================================
    Format_Val (min, mid, max) – aligned to graph box
-   OPTIMIZED: Pure integer arithmetic, no sprintf
+   OPTIMIZED: no sprintf. Still uses double math for the two
+   fixed-decimal branches below (write_fixed), same 8087 double
+   usage already present elsewhere in this file — not a new
+   dependency, just no longer routed through the libc formatter.
+
+   BUGFIXES vs. the original sprintf version (flagged and approved
+   as an explicit behavior change, not a silent compaction edit):
+     1. buf[pos] terminator now reflects actual characters written,
+        not a hardcoded +4/+5 that could overshoot on multi-digit
+        magnitudes and leave garbage bytes before the real '\0'.
+     2. v == 0 now returns immediately instead of falling through
+        into the "%.4f"-equivalent branch and appending a second
+        "0.0000" after the already-written "0".
+     3. Negative values in the two fixed-decimal branches no longer
+        get a duplicated leading '-' (previously: '-' was written
+        up front for any negative v, then the decimal branch used
+        sprintf("%.4f"/"%.2f", val) on the still-negative val,
+        producing e.g. "--0.0500").
    ============================================================ */
+
+/* Writes the unsigned decimal digits of n at p (no leading zeros,
+   "0" for n==0). Returns the number of characters written. */
+static int write_udigits(char *p, unsigned long n)
+{
+    char tmp[12];
+    int i = 0, len;
+
+    if (n == 0) {
+        p[0] = '0';
+        return 1;
+    }
+    while (n > 0) {
+        tmp[i++] = (char)('0' + (int)(n % 10UL));
+        n /= 10UL;
+    }
+    len = i;
+    while (i > 0) {
+        *p++ = tmp[--i];
+    }
+    return len;
+}
+
+/* Writes val rounded to 'decimals' fractional digits (round-half-up
+   on the magnitude), sign included. 'scale' is 10^decimals (e.g.
+   10000 for 4 decimals, 100 for 2). Owns the sign itself so callers
+   never pre-write '-' before calling this. Returns chars written. */
+static int write_fixed(char *p, double val, long scale, int decimals)
+{
+    int neg  = (val < 0.0);
+    double mag = neg ? -val : val;
+    long scaled = (long)(mag * (double)scale + 0.5);
+    long whole  = scaled / scale;
+    long frac   = scaled % scale;
+    int pos = 0;
+    long div;
+    int d;
+
+    if (neg) p[pos++] = '-';
+    pos += write_udigits(p + pos, (unsigned long)whole);
+    p[pos++] = '.';
+
+    div = scale / 10L;
+    for (d = 0; d < decimals; d++) {
+        long digit = (frac / div) % 10L;
+        p[pos++] = (char)('0' + (int)digit);
+        div /= 10L;
+    }
+    return pos;
+}
 
 static void format_val(char *buf, double val)
 {
-    long v = (long)(val * 1000.0);
-    int pos = 0;
-    char *p = buf;
-    
-    if (v == 0) {
-        *p++ = '0';
-        pos = 1;
-    } else if (v < 0) {
-        *p++ = '-';
-        v = -v;
+    long v   = (long)(val * 1000.0);   /* thousandths, truncated toward 0 */
+    long mag = (v < 0) ? -v : v;
+    int  pos = 0;
+
+    if (val == 0.0) {   /* exact zero only — near-zero nonzero values
+                           fall through to the 4-decimal branch below
+                           instead of collapsing to "0" */
+        buf[0] = '0';
+        buf[1] = '\0';
+        return;
     }
-    
-    /* Integer division for scaling */
-    if (v >= 1000000L) {
-        long m = v / 1000000L;
-        int frac = (int)((v % 1000000L) * 10 / 100000L);
-        /* Write "m.fracM" */
-        pos += sprintf(p, "%ld.%dM", m, frac); p += 4; pos += 4;
-    } else if (v >= 1000L) {
-        long m = v / 1000L;
-        int frac = (int)((v % 1000L) * 10 / 100L);
-        /* Write "m.fracK" */
-        pos += sprintf(p, "%ld.%dK", m, frac); p += 4; pos += 4;
-    } else if (v < 100 && v > -100) {
-        /* Write "%.4f" */
-        pos += sprintf(p, "%.4f", val); p += 5; pos += 5;
+
+    if (mag >= 1000000L) {
+        long m    = mag / 1000000L;
+        long frac = (mag % 1000000L) * 10L / 100000L;  /* 0-99, not 0-9 */
+        if (v < 0) buf[pos++] = '-';
+        pos += write_udigits(buf + pos, (unsigned long)m);
+        buf[pos++] = '.';
+        pos += write_udigits(buf + pos, (unsigned long)frac);
+        buf[pos++] = 'M';
+    } else if (mag >= 1000L) {
+        long m    = mag / 1000L;
+        long frac = (mag % 1000L) * 10L / 100L;         /* 0-99, not 0-9 */
+        if (v < 0) buf[pos++] = '-';
+        pos += write_udigits(buf + pos, (unsigned long)m);
+        buf[pos++] = '.';
+        pos += write_udigits(buf + pos, (unsigned long)frac);
+        buf[pos++] = 'K';
+    } else if (mag < 100L) {
+        pos = write_fixed(buf, val, 10000L, 4);
     } else {
-        /* Write "%.2f" */
-        pos += sprintf(p, "%.2f", val); p += 5; pos += 5;
+        pos = write_fixed(buf, val, 100L, 2);
     }
+
     buf[pos] = '\0';
 }
 
@@ -400,7 +470,6 @@ static const char *get_param_desc(const char *short_name)
         const char *key;
         const char *desc;
     } lookup[] = {
-        { "name",               "Scenario Name"                                },
         { "int_rev",            "Interest Payments as % of Federal Revenue"    },
         { "debt_gdp",           "Federal Debt as % of GDP"                     },
         { "usd_reserve_share",  "US Dollar Share of Global FX Reserves"        },
@@ -427,7 +496,6 @@ static const char *get_param_desc(const char *short_name)
         { "close",              "Closing Price"                                },
         { "volume",             "Trading Volume"                               },
         { "vwap",               "Volume Weighted Average Price"                },
-        { "adj_close",          "Adjusted Closing Price"                       },
         /* technical indicators */
         { "rsi",                "Relative Strength Index (0-100)"              },
         { "macd",               "MACD Line"                                    },
@@ -479,23 +547,26 @@ void graph_draw(const GraphParams *gp, const GraphData *gd)
 /* Title bar (top text row) */
 
     _settextposition(1, 1);
-    if (gp->ticker[0] != '\0')
-        sprintf(buf, "[%s] %s  (%d/%d)  Scale: %s",
-                gp->ticker,
-                get_param_desc(gp->labels[gp->param_index]),
-                gp->param_index + 1,
-                gp->total_params,
-                (gp->scale_mode == SCALE_TIGHT)    ? "Tight"  :
-                (gp->scale_mode == SCALE_PADDED)   ? "Padded" :
-                (gp->scale_mode == SCALE_CENTERED) ? "Center" : "Fixed");
-    else
-        sprintf(buf, "%s  (%d/%d)  Scale: %s",
-                get_param_desc(gp->labels[gp->param_index]),
-                gp->param_index + 1,
-                gp->total_params,
-                (gp->scale_mode == SCALE_TIGHT)    ? "Tight"  :
-                (gp->scale_mode == SCALE_PADDED)   ? "Padded" :
-                (gp->scale_mode == SCALE_CENTERED) ? "Center" : "Fixed");
+    {
+        const char *scale_str =
+            (gp->scale_mode == SCALE_TIGHT)    ? "Tight"  :
+            (gp->scale_mode == SCALE_PADDED)   ? "Padded" :
+            (gp->scale_mode == SCALE_CENTERED) ? "Center" : "Fixed";
+
+        if (gp->ticker[0] != '\0')
+            sprintf(buf, "[%s] %s  (%d/%d)  Scale: %s",
+                    gp->ticker,
+                    get_param_desc(gp->labels[gp->param_index]),
+                    gp->param_index + 1,
+                    gp->total_params,
+                    scale_str);
+        else
+            sprintf(buf, "%s  (%d/%d)  Scale: %s",
+                    get_param_desc(gp->labels[gp->param_index]),
+                    gp->param_index + 1,
+                    gp->total_params,
+                    scale_str);
+    }
     buf[79] = '\0';
     _outtext(buf);
 
@@ -552,3 +623,4 @@ int graph_handle_input(GraphParams *gp, int ch)
     }
     return 0;
 }
+

@@ -16,8 +16,12 @@ typedef enum {
    COMPACT: Use fixed-size arrays instead of pointers
    ============================================================ */
 typedef struct {
-    int          param_index;
-    int          total_params;
+    unsigned char param_index;    /* was int; confirmed safe: max ~19,
+                                      C's default argument promotion
+                                      makes %d/arithmetic sites behave
+                                      identically to before (see task
+                                      6 verification) */
+    unsigned char total_params;   /* was int; same reasoning */
     int          window_start;
     int          window_size;
     char         labels[20][32];  /* inline labels, max 19 params */

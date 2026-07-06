@@ -1,7 +1,7 @@
-#include <stdio.h>
+#include <stdio.h>      /* printf */
 #include <conio.h>
 #include <graph.h>
-#include <string.h>
+#include <string.h>     /* strlen */
 #include "qxgraph.h"
 #include "qxrun.h"
 #include "txt_pick.h"
@@ -10,15 +10,17 @@ static void qxgraph_banner(void)
 {
     static const char *lines[] = {
         "============================================================",
-        "                        QXGRAPH  v1.2                       ",
+        "                        QXGRAPH  v1.25                       ",
         "                   QUANTXT Graphing Utility                 ",
         "------------------------------------------------------------",
         "   Stand-alone CGA Mode 6 Time-Series Graphing Tool         ",
-        "   (C) 2026 ArchLabWorks                           ",
+        "   (C) 2026 ArchLabWorks                                    ",
         "                                                            ",
         "   LEFT / RIGHT  : Switch parameter                         ",
         "   A             : Cycle scale mode                         ",
-        "   ESC           : Exit                                     ",
+        "   C             : Carosel Mode                             ",
+        "   + / -         : Carosel Speed (in Seconds)               ",
+        "   ESC           : Exit (Browse more or quit)               ",
         "------------------------------------------------------------"
     };
     const int line_count = sizeof(lines) / sizeof(lines[0]);
@@ -102,3 +104,4 @@ int main(void)
 
     return 0;
 }
+
